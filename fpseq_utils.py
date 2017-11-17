@@ -4,7 +4,7 @@ import itertools
 import gzip
 import numpy as np
 from scipy import stats
-import dill as pickle
+import cPickle as pickle
 import math
 import multiprocessing
 from collections import defaultdict
