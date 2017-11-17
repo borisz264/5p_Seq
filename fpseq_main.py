@@ -18,6 +18,7 @@ class experiment:
         self.settings.write_to_log('Initializing experiment %s' % self.settings.get_property('experiment_name'))
         self.num_libs = len([x for x in settings.iter_lib_settings()])
         self.move_molecular_barcode_to_name()
+        self.remove_adaptor()
         self.make_ncRNA_mapping_index()
         self.make_genome_mapping_index()
         self.map_reads_to_ncrna()
@@ -99,18 +100,16 @@ class experiment:
         self.settings.write_to_log('STAR index ready')
 
     def remove_adaptor(self):
-        if self.settings.get_property('adaptor_3p_sequence') == '':
-            self.settings.write_to_log('adaptor_3p_sequence not provided, not trimming adaptors fromreads')
+        if self.settings.get_property('read1_adaptor_3p_sequence') == '':
+            self.settings.write_to_log('read1_adaptor_3p_sequence not provided, not trimming adaptors fromreads')
             return
-        elif not self.settings.get_property('force_retrim'):
+        else:
             for lib_settings in self.settings.iter_lib_settings():
                 if not lib_settings.adaptorless_reads_exist():
                     break
             else:
                 self.settings.write_to_log('using existing adaptorless reads')
                 return
-        else:
-            self.settings.write_to_log('adaptor removal forced')
         self.settings.write_to_log('removing adaptors')
         fpseq_utils.make_dir(self.rdir_path('adaptor_removed'))
         map(lambda lib_setting: self.remove_adaptor_one_lib(lib_setting, self.threads),
@@ -127,26 +126,46 @@ class experiment:
         -o is the output prefix
         --threads specifies number of threads to use
         """
-
-        if self.settings.get_property('trim_5p') == 0:
-            reads_to_use = lib_settings.get_fastq_gz_file()
+        if lib_settings.get_read2() is not None:
+            command_to_run = 'skewer -x %s -Q %d -l %d -L %d -o %s --quiet --threads %s %s %s 1>>%s 2>>%s' % (
+                self.settings.get_property('read1_adaptor_3p_sequence'),
+                self.settings.get_property('sequence_quality_cutoff'),
+                self.settings.get_property('min_post_trimming_length'),
+                self.settings.get_property('max_post_trimming_length'),
+                lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                threads,
+                lib_settings.get_debarcoded_read1(),
+                lib_settings.get_read2(),
+                lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+            compression_command = 'gzip -c %s-trimmed-pair1.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                                                                     lib_settings.get_adaptor_trimmed_read1(
+                                                                         prefix_only=False))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
+            compression_command = 'gzip -c %s-trimmed-pair2.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                                                                     lib_settings.get_adaptor_trimmed_read2(
+                                                                         prefix_only=False))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
         else:
-            reads_to_use = lib_settings.get_debarcoded_read1()
-
-        command_to_run = 'skewer -x %s -Q %d -l %d -L %d -o %s --quiet --threads %s %s 1>>%s 2>>%s' % (
-            self.settings.get_property('adaptor_3p_sequence'),
-            self.settings.get_property('sequence_quality_cutoff'),
-            self.settings.get_property('min_post_trimming_length'),
-            self.settings.get_property('max_post_trimming_length'),
-            lib_settings.get_adaptor_trimmed_reads(prefix_only=True),
-            threads,
-            reads_to_use,
-            lib_settings.get_log(), lib_settings.get_log())
-        lib_settings.write_to_log(command_to_run)
-        subprocess.Popen(command_to_run, shell=True).wait()
-        compression_command = 'gzip %s-trimmed.fastq' % (lib_settings.get_adaptor_trimmed_reads(prefix_only=True))
-        lib_settings.write_to_log(compression_command)
-        subprocess.Popen(compression_command, shell=True).wait()
+            command_to_run = 'skewer -x %s -Q %d -l %d -L %d -o %s --quiet --threads %s %s 1>>%s 2>>%s' % (
+                self.settings.get_property('read1_adaptor_3p_sequence'),
+                self.settings.get_property('sequence_quality_cutoff'),
+                self.settings.get_property('min_post_trimming_length'),
+                self.settings.get_property('max_post_trimming_length'),
+                lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                threads,
+                lib_settings.get_debarcoded_read1(),
+                lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+            compression_command = 'gzip -c %s-trimmed.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                                                                     lib_settings.get_adaptor_trimmed_read1(
+                                                                         prefix_only=False))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
         lib_settings.write_to_log('adaptor trimming done')
 
     def map_reads_to_ncrna(self):
@@ -167,12 +186,12 @@ class experiment:
 
     def map_one_library_to_ncrna(self, lib_settings, threads):
         lib_settings.write_to_log('mapping reads to ncRNA')
-        if lib_settings.get_read2() is not None :
+        if lib_settings.get_read2() is not None:
             command_to_run = 'STAR --runThreadN %d --limitBAMsortRAM 8000000000 --genomeDir %s --readFilesIn %s %s --readFilesCommand gunzip -c ' \
                              '--outSAMtype BAM SortedByCoordinate --outFilterMultimapNmax %d --outWigType wiggle read1_5p --outFileNamePrefix %s ' \
                              '--outReadsUnmapped Fastx 1>>%s 2>>%s' %\
                              (threads, self.settings.get_star_ncrna_dir(),
-                              lib_settings.get_debarcoded_read1(), lib_settings.get_read2(),
+                              lib_settings.get_adaptor_trimmed_read1(), lib_settings.get_adaptor_trimmed_read2(),
                               self.settings.get_property('outfiltermultimapnmax'),
                               lib_settings.get_ncrna_mapped_reads_prefix(), lib_settings.get_log(), lib_settings.get_log())
         else:
@@ -180,7 +199,7 @@ class experiment:
                              '--outSAMtype BAM SortedByCoordinate --outFilterMultimapNmax %d --outWigType wiggle read1_5p --outFileNamePrefix %s ' \
                              '--outReadsUnmapped Fastx 1>>%s 2>>%s' %\
                              (threads, self.settings.get_star_ncrna_dir(),
-                              lib_settings.get_debarcoded_read1(),
+                              lib_settings.get_adaptor_trimmed_read1(),
                               self.settings.get_property('outfiltermultimapnmax'),
                               lib_settings.get_ncrna_mapped_reads_prefix(), lib_settings.get_log(), lib_settings.get_log())
         lib_settings.write_to_log(command_to_run)
