@@ -38,10 +38,10 @@ class fpseq_settings:
         - stores result in self.settings as a dict()
         - CRITICAL NOTE: All keys must be lower case
         """
-        int_keys = ['rand_barcode_length', 'ncrna_genomesasparsed', 'ncrna_genomesaindexnbases', 'outfiltermultimapnmax',
+        int_keys = ['rand_barcode_length', 'sequence_quality_cutoff', 'min_post_trimming_length', 'max_post_trimming_length', 'ncrna_genomesasparsed', 'ncrna_genomesaindexnbases', 'outfiltermultimapnmax',
                     'alignsjdboverhangmin', 'alignsjoverhangmin', 'genomic_genomesasparsed', 'genomic_genomesaindexnbases', 'max_read_length']
         #float_keys = []
-        str_keys = ['star_ncrna_dir', 'ncrna_sequence_dir', 'star_genome_dir', 'genome_sequence_dir', 'annotation_gtf_file']
+        str_keys = ['read1_adaptor_3p_sequence', 'star_ncrna_dir', 'ncrna_sequence_dir', 'star_genome_dir', 'genome_sequence_dir', 'annotation_gtf_file']
         #boolean_keys = []
         list_str_keys = ['read1_files', 'read2_files', 'sample_names']
         #list_float_keys = ['concentrations', 'input_rna']
@@ -190,6 +190,36 @@ class fpseq_lib_settings:
            {'sample_name': self.sample_name})
         return debarcoded_reads
 
+    def get_adaptor_trimmed_read1(self, prefix_only = False):
+        if prefix_only:
+            trimmed_reads = os.path.join(
+              self.experiment_settings.get_rdir(),
+              'adaptor_removed',
+              '%(sample_name)s_1' %
+               {'sample_name': self.sample_name})
+        else:
+            trimmed_reads = os.path.join(
+              self.experiment_settings.get_rdir(),
+              'adaptor_removed',
+              '%(sample_name)s_1.fastq.gz' %
+               {'sample_name': self.sample_name})
+        return trimmed_reads
+
+    def get_adaptor_trimmed_read2(self, prefix_only = False):
+        if prefix_only:
+            trimmed_reads = os.path.join(
+              self.experiment_settings.get_rdir(),
+              'adaptor_removed',
+              '%(sample_name)s_2' %
+               {'sample_name': self.sample_name})
+        else:
+            trimmed_reads = os.path.join(
+              self.experiment_settings.get_rdir(),
+              'adaptor_removed',
+              '%(sample_name)s_2.fastq.gz' %
+               {'sample_name': self.sample_name})
+        return trimmed_reads
+
     def get_ncrna_mapping_log(self):
         mapped_reads = os.path.join(self.experiment_settings.get_rdir(), 'ncrna_mapped_reads', '%(sample_name)sLog.final.out' % {'sample_name': self.sample_name})
         return mapped_reads
@@ -242,6 +272,10 @@ class fpseq_lib_settings:
 
     def debarcoded_reads_exist(self):
         trimmed_reads = self.get_debarcoded_read1()
+        return fpseq_utils.file_exists(trimmed_reads)
+
+    def adaptorless_reads_exist(self):
+        trimmed_reads = self.get_adaptor_trimmed_read1()
         return fpseq_utils.file_exists(trimmed_reads)
 
     def ncrna_mapped_reads_exist(self):
