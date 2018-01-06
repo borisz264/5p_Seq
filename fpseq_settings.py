@@ -190,6 +190,14 @@ class fpseq_lib_settings:
            {'sample_name': self.sample_name})
         return debarcoded_reads
 
+    def get_debarcoded_read2(self):
+        debarcoded_reads = os.path.join(
+          self.experiment_settings.get_rdir(),
+          'debarcoded',
+          '%(sample_name)s_2.fastq.gz' %
+           {'sample_name': self.sample_name})
+        return debarcoded_reads
+
     def get_adaptor_trimmed_read1(self, prefix_only = False):
         if prefix_only:
             trimmed_reads = os.path.join(
@@ -253,6 +261,11 @@ class fpseq_lib_settings:
         mapped_reads = os.path.join(self.experiment_settings.get_rdir(), 'genome_mapped_reads', '%(sample_name)sAligned.sortedByCoord.out.bam' % {'sample_name': self.sample_name})
         return mapped_reads
 
+    def get_deduplicated_mappings(self):
+        mapped_reads = os.path.join(self.experiment_settings.get_rdir(), 'deduplicated_mappings', '%(sample_name)s.bam' % {'sample_name': self.sample_name})
+        return mapped_reads
+
+
     def get_transcript_mapped_reads(self):
         mapped_reads = os.path.join(self.experiment_settings.get_rdir(), 'genome_mapped_reads', '%(sample_name)sAligned.toTranscriptome.out.bam' % {'sample_name': self.sample_name})
         return mapped_reads
@@ -284,4 +297,8 @@ class fpseq_lib_settings:
 
     def genome_mapped_reads_exist(self):
         mapped_reads = self.get_genome_mapped_reads()
+        return fpseq_utils.file_exists(mapped_reads)
+
+    def deduplicated_mappings_exist(self):
+        mapped_reads = self.get_deduplicated_mappings()
         return fpseq_utils.file_exists(mapped_reads)

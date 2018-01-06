@@ -23,6 +23,7 @@ class experiment:
         self.make_genome_mapping_index()
         self.map_reads_to_ncrna()
         self.map_reads_to_genome()
+        self.remove_pcr_duplicates()
         # self.settings.write_to_log('loading genome sequence')
         # self.genome = fpseq_utils.genome_sequence(self.settings.get_genome_sequence_files())
         # self.settings.write_to_log('loading GTF annotations')
@@ -47,21 +48,31 @@ class experiment:
                            self.settings.iter_lib_settings(), nprocs=self.threads)
         self.settings.write_to_log('done debarcoding reads')
 
-    def move_molecular_barcode_to_name_one_lib(self, lib_setting):
-        lib_setting.write_to_log('debarcoding reads')
-        in_fastq_file_name = lib_setting.get_read1()
-        out_fastq_file_name = lib_setting.get_debarcoded_read1()
-        num_chars = lib_setting.get_property('rand_barcode_length')
-        out_fastq_file = fpseq_utils.aopen(out_fastq_file_name, mode='w')
-        for quartet in fpseq_utils.iter4Lines(in_fastq_file_name):
-            name_line, seq_line, garbage, q_scores = quartet
-            barcode = seq_line[:num_chars]
-            out_fastq_file.write('%s %s\n' % (name_line.rstrip('\n'), barcode))
-            out_fastq_file.write(seq_line[num_chars:])
-            out_fastq_file.write(garbage)
-            out_fastq_file.write(q_scores[num_chars:])
-        out_fastq_file.close()
-        lib_setting.write_to_log('done debarcoding reads')
+    def move_molecular_barcode_to_name_one_lib(self, lib_settings):
+
+        '''
+        
+        :param lib_setting: 
+        :return: 
+        '''
+        lib_settings.write_to_log('debarcoding reads')
+        if lib_settings.get_read2() is not None:
+            command_to_run = 'umi_tools extract -I %s --bc-pattern=%s --read2-in=%s ' \
+                             '--stdout=%s ' \
+                             '--read2-out=%s 1>>%s 2>>%s' % (
+                lib_settings.get_read1(), 'N'*self.settings.get_property('rand_barcode_length'),
+                lib_settings.get_read2(), lib_settings.get_debarcoded_read1(), lib_settings.get_debarcoded_read2(),
+                lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+        else:
+            command_to_run = 'umi_tools extract -I %s --bc-pattern=%s --stdout=%s  1>>%s 2>>%s' % (
+                lib_settings.get_read1(), 'N'*self.settings.get_property('rand_barcode_length'),
+                lib_settings.get_debarcoded_read1(), lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+
+        lib_settings.write_to_log('done debarcoding reads')
 
     def make_ncRNA_mapping_index(self):
         make_index = False
@@ -135,16 +146,22 @@ class experiment:
                 lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
                 threads,
                 lib_settings.get_debarcoded_read1(),
-                lib_settings.get_read2(),
+                lib_settings.get_debarcoded_read2(),
                 lib_settings.get_log(), lib_settings.get_log())
             lib_settings.write_to_log(command_to_run)
             subprocess.Popen(command_to_run, shell=True).wait()
-            compression_command = 'gzip -c %s-trimmed-pair1.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
-                                                                     lib_settings.get_adaptor_trimmed_read1(
-                                                                         prefix_only=False))
+            compression_command = 'gzip %s-trimmed-pair1.fastq' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True))
             lib_settings.write_to_log(compression_command)
             subprocess.Popen(compression_command, shell=True).wait()
-            compression_command = 'gzip -c %s-trimmed-pair2.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+            compression_command = 'mv %s-trimmed-pair1.fastq.gz %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+                                                                     lib_settings.get_adaptor_trimmed_read1(prefix_only=False))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
+
+            compression_command = 'gzip %s-trimmed-pair2.fastq' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
+            compression_command = 'mv %s-trimmed-pair2.fastq.gz %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
                                                                      lib_settings.get_adaptor_trimmed_read2(
                                                                          prefix_only=False))
             lib_settings.write_to_log(compression_command)
@@ -161,11 +178,16 @@ class experiment:
                 lib_settings.get_log(), lib_settings.get_log())
             lib_settings.write_to_log(command_to_run)
             subprocess.Popen(command_to_run, shell=True).wait()
-            compression_command = 'gzip -c %s-trimmed.fastq > %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
+
+            compression_command = 'gzip %s-trimmed.fastq' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True))
+            lib_settings.write_to_log(compression_command)
+            subprocess.Popen(compression_command, shell=True).wait()
+            compression_command = 'mv %s-trimmed.fastq.gz %s' % (lib_settings.get_adaptor_trimmed_read1(prefix_only=True),
                                                                      lib_settings.get_adaptor_trimmed_read1(
                                                                          prefix_only=False))
             lib_settings.write_to_log(compression_command)
             subprocess.Popen(compression_command, shell=True).wait()
+
         lib_settings.write_to_log('adaptor trimming done')
 
     def map_reads_to_ncrna(self):
@@ -259,6 +281,47 @@ class experiment:
         lib_settings.write_to_log(command_to_run)
         subprocess.Popen(command_to_run, shell=True).wait()
         lib_settings.write_to_log('mapping_reads done')
+
+    def remove_pcr_duplicates(self):
+        for lib_settings in self.settings.iter_lib_settings():
+            if not lib_settings.deduplicated_mappings_exist():
+                break
+        else:  # else clause executes if break did not occur
+            self.settings.write_to_log('using existing trimmed reads')
+            return
+        self.settings.write_to_log('removing PCR duplicates')
+        fpseq_utils.make_dir(self.rdir_path('deduplicated_mappings'))
+        fpseq_utils.parmap(lambda lib_setting: self.remove_pcr_duplicates_one_lib(lib_setting),
+                           self.settings.iter_lib_settings(), nprocs=self.threads)
+        self.settings.write_to_log('removing PCR duplicates')
+
+    def remove_pcr_duplicates_one_lib(self, lib_settings):
+
+        '''
+
+        :param lib_setting: 
+        :return: 
+        '''
+        lib_settings.write_to_log('debarcoding reads')
+        if lib_settings.get_read2() is not None:
+            command_to_run = 'umi_tools dedup -I %s --output-stats=deduplicated --paired -S %s 1>>%s 2>>%s' % (
+                                 lib_settings.get_genome_mapped_reads(),
+                                 lib_settings.get_deduplicated_mappings(),
+                                 lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+        else:
+            command_to_run = 'umi_tools dedup -I %s --output-stats=deduplicated -S %s 1>>%s 2>>%s' % (
+                                 lib_settings.get_genome_mapped_reads(),
+                                 lib_settings.get_deduplicated_mappings(),
+                                 lib_settings.get_log(), lib_settings.get_log())
+            lib_settings.write_to_log(command_to_run)
+            subprocess.Popen(command_to_run, shell=True).wait()
+        command_to_run = 'samtools index %s' % (lib_settings.get_deduplicated_mappings())
+        lib_settings.write_to_log(command_to_run)
+        subprocess.Popen(command_to_run, shell=True).wait()
+        lib_settings.write_to_log('done debarcoding reads')
+
 
     def initialize_libs(self):
         self.settings.write_to_log('initializing libraries, counting reads')
